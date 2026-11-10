@@ -1,0 +1,5 @@
+# Tested with CPython 3.12 on Windows x64.
+numpy>=1.26,<3
+Pillow>=10,<13
+tifffile>=2024.1.30,<2027
+pycocotools>=2.0.7,<3
