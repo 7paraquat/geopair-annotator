@@ -137,7 +137,7 @@ try:
               'independent optical/SAR polygons','road centerline TIFF pixel equality','stale write rejected','progress',
               'restart persistence','export SHA256 integrity','original imagery unchanged','incomplete pair rejected']}
     (root/'test_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-    print(json.dumps(report,ensure_ascii=False))
+    print(json.dumps(report,ensure_ascii=True))
 finally:
     if process is not None and process.poll() is None:
         (workspace/'stop.request').write_text('stop')
