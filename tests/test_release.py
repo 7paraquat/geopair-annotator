@@ -61,7 +61,8 @@ try:
     query = '?site='+site+'&stem='+stem
     assert get('/api/sites')['sites'] == [site]
     assert b'<html' in raw('/').lower()
-    for path in ['/app.20261029-dual-masks-1.js', '/geometry.js']:
+    assert b'mode-road' in raw('/')
+    for path in ['/app.js', '/geometry.js']:
         assert len(raw(path)) > 1000
     for mode in ('opt','sar'):
         assert Image.open(io.BytesIO(raw('/api/image'+query+'&mod='+mode))).size == (48,32)
@@ -91,8 +92,26 @@ try:
         expected_sar=np.zeros((32,48),np.uint8);expected_sar[11:19,11:19]=category_id
         assert np.array_equal(opt,expected_opt) and np.array_equal(sar,expected_sar)
     assert get('/api/progress')['regions'][0]['percent'] == 100
+    import sys
+    sys.path.insert(0, str(root/'app'))
+    import shared_masks
+    road_mask = np.zeros((32,48),np.uint8)
+    for y in range(32):
+        for x in range(48):
+            t = max(0,min(1,(x+.5-8)/30))
+            road_mask[y,x] = (x+.5-8-30*t)**2+(y+.5-22)**2 <= 16
+    road = {'id':2,'category':'road','polygon':None,'segmentation':shared_masks.encode(road_mask),
+            'road_centerline':[[8,22],[38,22]],'road_width':8,'sar_polygon':None,
+            'sar_segmentation':shared_masks.encode(road_mask),'sar_road_centerline':[[8,22],[38,22]],'sar_road_width':8}
+    road_saved = get('/api/save',dict(payload,base_revision=saved['revision'],annotations=[annotation,road]))
+    with zipfile.ZipFile(io.BytesIO(raw('/api/export'+query))) as archive:
+        road_opt = np.array(Image.open(io.BytesIO(archive.read('masks_opt/'+stem+'.tif'))))
+        road_sar = np.array(Image.open(io.BytesIO(archive.read('masks_sar/'+stem+'.tif'))))
+        road_id = next(v['id'] for v in get('/api/tile'+query)['label_map']['classes'] if v['value']=='road')
+        assert np.array_equal(road_opt == road_id, road_mask.astype(bool))
+        assert np.array_equal(road_sar == road_id, road_mask.astype(bool))
     stop(); launch()
-    assert get('/api/tile'+query)['revision'] == saved['revision']
+    assert get('/api/tile'+query)['revision'] == road_saved['revision']
     assert get('/api/meta')['category_labels']['qa_custom'] == '测试新增类别'
     stop()
     export = qa / '交回标注.zip'
@@ -115,7 +134,7 @@ try:
     report = {'passed':True, 'qa_dir':str(qa), 'exe':str(exe), 'python_on_path':False,
               'checks':['Chinese paths/spaces','bundled dependencies','single workspace lock','local frontend/assets',
               'optical/SAR imagery','blank initial annotations/no original masks','Chinese custom labels',
-              'independent optical/SAR polygons','TIFF pixel equality','stale write rejected','progress',
+              'independent optical/SAR polygons','road centerline TIFF pixel equality','stale write rejected','progress',
               'restart persistence','export SHA256 integrity','original imagery unchanged','incomplete pair rejected']}
     (root/'test_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps(report,ensure_ascii=False))

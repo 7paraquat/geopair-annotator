@@ -196,6 +196,42 @@ def side_geometry(raw, prefix, h, w, optional=False):
     if not len(x): raise ValueError('空掩膜请使用本侧不可确认或删除标注')
     return poly,mask,encode(mask),[int(x.min()),int(y.min()),int(x.max()+1),int(y.max()+1)]
 
+def road_geometry(raw, prefix, category, mask, h, w):
+    points = raw.get(prefix + 'road_centerline')
+    width = raw.get(prefix + 'road_width')
+    if points is None and width is None:
+        return None, None
+    if category != 'road' or mask is None or not isinstance(points, list) or not 2 <= len(points) <= 512:
+        raise ValueError('道路中线与类别或本侧掩膜不一致')
+    if isinstance(width, bool) or not isinstance(width, int) or not 1 <= width <= 200:
+        raise ValueError('道路宽度需为1至200像素')
+    cleaned = []
+    for point in points:
+        if not isinstance(point, (list, tuple)) or len(point) != 2 or any(
+            isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+            or abs(v) > max(h, w) * 1024 for v in point
+        ):
+            raise ValueError('道路中线坐标无效')
+        cleaned.append([float(point[0]), float(point[1])])
+    expected = np.zeros((h, w), dtype=np.uint8)
+    radius = width / 2
+    for (ax, ay), (bx, by) in zip(cleaned, cleaned[1:]):
+        dx, dy = bx - ax, by - ay
+        length2 = dx * dx + dy * dy
+        if length2 < 1e-12:
+            raise ValueError('道路中线含重合的相邻点')
+        x0, x1 = max(0, math.floor(min(ax, bx) - radius)), min(w, math.ceil(max(ax, bx) + radius))
+        y0, y1 = max(0, math.floor(min(ay, by) - radius)), min(h, math.ceil(max(ay, by) + radius))
+        if x0 >= x1 or y0 >= y1:
+            continue
+        y, x = np.ogrid[y0:y1, x0:x1]
+        px, py = x + .5, y + .5
+        t = np.clip(((px - ax) * dx + (py - ay) * dy) / length2, 0, 1)
+        expected[y0:y1, x0:x1] |= ((px - ax - t * dx) ** 2 + (py - ay - t * dy) ** 2 <= radius ** 2 + 1e-9)
+    if not np.array_equal(expected, mask):
+        raise ValueError('道路中线、宽度与掩膜不一致，请重新生成')
+    return cleaned, width
+
 def save(root,data_root,payload,mapping,shape_resolver=None,metadata=None):
     site=check_name(payload.get('site')); stem=check_name(payload.get('stem'))
     workflow=payload.get('workflow_status','done')
@@ -226,9 +262,16 @@ def save(root,data_root,payload,mapping,shape_resolver=None,metadata=None):
             if raw.get('sar_segmentation') is not None and not np.array_equal(mask,decode(raw['sar_segmentation'],h,w)):
                 raise ValueError('共享模式不允许光学和SAR掩膜不同')
             sar_poly,sar_mask,sar_rle,sar_box=poly,mask,rle,box
+        road_points, road_width = road_geometry(raw, '', category, mask, h, w)
+        if dual:
+            sar_road_points, sar_road_width = road_geometry(raw, 'sar_', category, sar_mask, h, w)
+        else:
+            sar_road_points, sar_road_width = road_points, road_width
         item={key:raw.get(key,'') for key in ['source_category','task','color','material','origin']}
         item.update(id=ident,category=category,bbox_xyxy=box,sar_bbox_xyxy=sar_box,
                     opt_keep=mask is not None,sar_keep=sar_mask is not None,segmentation=rle,sar_segmentation=sar_rle,polygon=poly,sar_polygon=sar_poly)
+        item.update(road_centerline=road_points,road_width=road_width,
+                    sar_road_centerline=sar_road_points,sar_road_width=sar_road_width)
         cleaned.append(item)
         if mask is not None: result[mask.astype(bool)]=ids[category]
         if sar_mask is not None: sar_result[sar_mask.astype(bool)]=ids[category]

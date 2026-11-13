@@ -18,7 +18,7 @@ for dependency in ('numpy','Pillow','tifffile','pycocotools'):
 command.append(str(root/'desktop.py'))
 subprocess.run(command,cwd=root,check=True)
 release = root/'dist/GeoPairAnnotator'
-for name in ('README.md','LICENSE','THIRD_PARTY_NOTICES.md'):
+for name in ('README.md','LICENSE','THIRD_PARTY_NOTICES.md','version.json','update.ps1'):
     shutil.copy2(root/name,release/name)
 shutil.copytree(root/'docs',release/'docs',dirs_exist_ok=True)
 shutil.copytree(root/'third_party',release/'third_party',dirs_exist_ok=True)

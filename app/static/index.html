@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-editor-version="20261029-dual-masks-1">
+<html lang="zh-CN" data-editor-version="20261114-region-partition-1">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>GeoPair Annotator · 光学 / SAR 标注</title>
+<title>遥感数据标注</title>
 <style>
   :root { color-scheme: light; --green:#204b3c; --green-light:#e5f2ec; --line:#dce4df; --muted:#64746d; }
   * { box-sizing:border-box; }
@@ -28,6 +28,9 @@
   #viewer { min-width:0; display:flex; flex-direction:column; }
   .toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:9px 11px; background:#fff; border-bottom:1px solid var(--line); }
   .toolgroup { display:flex; gap:4px; align-items:center; padding-right:9px; margin-right:2px; border-right:1px solid var(--line); }
+  .toolbar label { display:flex; align-items:center; gap:5px; margin:0 4px; white-space:nowrap; }
+  #road-width { width:62px; padding:4px; }
+  #partition-category { width:110px; padding:4px; }
   .toolgroup:last-child { border:0; margin-left:auto; margin-right:0; padding-right:0; }
   #stage { min-height:0; flex:1; padding:12px; overflow:auto; background:#e8eeea; }
   .image-row { width:max-content; min-width:100%; display:flex; gap:12px; align-items:flex-start; justify-content:center; }
@@ -55,7 +58,7 @@
   #help ul { margin:7px 0; padding-left:1.2em; }
   #help li { margin:2px 0; }
   label { display:block; margin:11px 0 3px; color:#43564a; font-size:12px; font-weight:600; }
-  input[type="text"], select { width:100%; padding:7px 8px; border:1px solid #bac9bf; border-radius:4px; background:#fff; font:inherit; }
+  input[type="text"], input[type="number"], select { width:100%; padding:7px 8px; border:1px solid #bac9bf; border-radius:4px; background:#fff; font:inherit; }
   input[readonly] { color:var(--muted); background:#f5f7f5; }
   .row { display:flex; gap:7px; flex-wrap:wrap; margin-top:12px; }
   button { padding:6px 10px; border:1px solid #a9bdb0; border-radius:4px; background:#fff; color:#234234; cursor:pointer; font:inherit; white-space:nowrap; }
@@ -112,7 +115,7 @@
 </head>
 <body>
 <header>
-  <h1>GeoPair Annotator</h1>
+  <h1>遥感数据标注</h1>
   <span id="status">加载中</span>
   <button id="undo" type="button" disabled>撤销</button>
   <button id="redo" type="button" disabled>重做</button><button id="export" type="button">导出标签</button>
@@ -130,7 +133,7 @@
     <div class="queue-head">
       <h2>影像队列</h2>
       <p class="hint">仅加载光学与 SAR 影像，不加载数据集原掩膜。人工标注自动恢复；同一地物的两侧轮廓可分别调整。</p>
-      <select id="dataset" aria-label="数据集"><option value="earthmiss">本地光学 / SAR 配对影像</option></select>
+      <select id="dataset" aria-label="数据集"><option value="earthmiss">EarthMiss · 已保留影像</option></select>
       <select id="site" aria-label="站点"></select>
       <input id="filter" type="text" placeholder="搜索全部影像名" aria-label="搜索影像名"/>
       <select id="queue-status" aria-label="筛选处理状态">
@@ -150,12 +153,20 @@
       <div class="toolgroup" aria-label="标注工具">
         <button id="mode-select" type="button" class="on" aria-pressed="true">选择 / 顶点</button>
         <button id="mode-move" type="button" aria-pressed="false">移动本侧</button>
-        <button id="mode-polygon" type="button">多边形</button><button id="finish" type="button">闭合</button><button id="cancel" type="button">取消绘制</button>
+        <button id="mode-polygon" type="button">多边形</button><button id="mode-road" type="button">道路中线</button><button id="mode-road-edit" type="button">编辑中线</button><button id="finish" type="button">完成绘制</button><button id="cancel" type="button">取消绘制</button>
+        <button id="mode-rect3" type="button" title="先点矩形的一条边，再点第三点确定垂直宽度">三点矩形</button>
+        <label for="road-width">路宽 <input id="road-width" type="number" min="1" max="200" step="1" value="12" aria-label="道路完整像素宽度"/></label><span class="hint">px</span>
         <button id="mode-draw" type="button" aria-pressed="false">矩形掩膜</button>
         <button id="mode-erase" type="button" aria-pressed="false">橡皮擦</button>
         <button id="mode-paint" type="button" aria-pressed="false">补充笔刷</button>
         <label>笔刷 <input id="brush-size" type="range" min="3" max="50" value="15"/></label>
         <span id="brush-label">15 px</span>
+      </div>
+      <div class="toolgroup" aria-label="区域划分">
+        <button id="mode-area" type="button">圈定区域</button><button id="mode-divide" type="button">画分界线</button><button id="mode-classify" type="button">逐块分类</button>
+        <button id="undo-divider" type="button" title="撤销最近完成的一条分界线">撤销分界线</button>
+        <label for="partition-category">地块类别 <select id="partition-category" aria-label="分配给当前地块的类别"></select></label>
+        <button id="commit-partition" type="button">生成地块</button><button id="cancel-partition" type="button">放弃划分</button>
       </div>
       <div class="toolgroup"><button id="full-mask" type="button">新增全图掩膜</button><button id="toggle-mask" type="button" class="on" aria-pressed="true">显示掩膜</button></div>
       <div class="toolgroup" aria-label="影像显示">
@@ -196,6 +207,7 @@
     <div id="fields" hidden>
       <div class="row"><button id="copy-other" type="button">复制另一侧到本侧</button><button id="redraw-side" type="button">重画本侧</button><button id="clear-side" type="button">本侧不可确认</button></div>
       <p class="hint">新建轮廓先复制到两侧。点选对应影像或“调整光学 / SAR”，再拖顶点、移动或涂改；另一侧不变。SAR 看不清时标为不可确认。</p>
+      <p id="road-note" class="hint" hidden>道路中线可在“编辑中线”中拖点；上方路宽只修改当前侧。改用笔刷或重画后，中线参数会清除。</p>
       <label>类别</label>
       <select id="category"></select>
       <div class="row">
@@ -222,6 +234,9 @@
       <summary>操作说明与快捷键</summary>
       <ul>
         <li>多边形：逐点点击，点起点 / Enter / 闭合完成；Backspace 退一点，Escape 取消。</li>
+        <li>道路中线：设路宽（完整像素宽度），沿道路逐点点击，再点“完成绘制”；生成后选择道路、点“编辑中线”可拖动中线点或修改当前侧路宽。</li>
+        <li>三点矩形：先点一条边的两端，再点第三点确定垂直方向的宽度；可用于车辆等旋转目标。</li>
+        <li>地块划分：圈定区域并完成绘制；画分界线，每条线点至少两点后完成绘制，可画多条；点回线的起点可闭合，开放线须接到外边界才能分开地块；再选“逐块分类”，选类别后点击每块，最后点“生成地块”并保存。</li>
         <li>点击哪侧就调整哪侧；同一轮廓必须在同侧闭合。移动本侧可整体拖动，重画本侧保持地物编号。</li>
         <li>选择后可拖动多边形顶点；图外部分自动裁剪，交叉和退化形状不能保存。</li>
         <li>局部放大：在原图移动定位，光学/SAR显示同一区域；放大区也可标注，倍数为原图显示比例的2/4/8倍。</li>
@@ -234,6 +249,6 @@
     </details>
   </form>
 </main>
-<script src="/geometry.js?v=20261029-dual-masks-1"></script>
-<script src="/app.20261029-dual-masks-1.js?v=20261029-dual-masks-1"></script>
+<script src="/geometry.js?v=20261114-region-partition-1"></script>
+<script src="/app.js?v=20261114-region-partition-1"></script>
 </body></html>

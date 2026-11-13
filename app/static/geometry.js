@@ -74,5 +74,68 @@ function decode(rle,h,w){
  if(counts.reduce((a,b)=>a+b,0)!==h*w)throw Error('RLE像素数量不匹配');const result=new Uint8Array(h*w);let offset=0;counts.forEach((n,i)=>{if(i%2)for(let k=offset;k<offset+n;k++)result[(k%h)*w+Math.floor(k/h)]=1;offset+=n;});return result;
 }
 function bbox(mask,h,w){let x1=w,y1=h,x2=-1,y2=-1;for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(mask[y*w+x]){x1=Math.min(x1,x);y1=Math.min(y1,y);x2=Math.max(x2,x);y2=Math.max(y2,y);}return x2<0?null:[x1,y1,x2+1,y2+1];}
-const api={validate,clip,raster,encode,decode,bbox};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.MaskGeometry=api;
+function roadRaster(points,width,h,w){
+ if(!Array.isArray(points)||points.length<2||points.length>512)throw Error('道路中线需要2至512个点');
+ if(!Number.isInteger(width)||width<1||width>200)throw Error('道路宽度需为1至200像素');
+ for(const p of points)if(!Array.isArray(p)||p.length!==2||p.some(v=>typeof v!=='number'||!Number.isFinite(v)||Math.abs(v)>Math.max(h,w)*1024))throw Error('道路中线坐标无效');
+ const mask=new Uint8Array(h*w),radius=width/2,limit=radius*radius+1e-9;
+ for(let i=1;i<points.length;i++){
+  const [ax,ay]=points[i-1],[bx,by]=points[i],dx=bx-ax,dy=by-ay,length2=dx*dx+dy*dy;
+  if(length2<1e-12)throw Error('道路中线含重合的相邻点');
+  const x0=Math.max(0,Math.floor(Math.min(ax,bx)-radius)),x1=Math.min(w,Math.ceil(Math.max(ax,bx)+radius));
+  const y0=Math.max(0,Math.floor(Math.min(ay,by)-radius)),y1=Math.min(h,Math.ceil(Math.max(ay,by)+radius));
+  for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+   const px=x+.5,py=y+.5,t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/length2));
+   if((px-ax-t*dx)**2+(py-ay-t*dy)**2<=limit)mask[y*w+x]=1;
+  }
+ }
+ if(!mask.some(Boolean))throw Error('道路中线和宽度未覆盖影像内像素');
+ return mask;
+}
+function threePointRectangle(points){
+ if(!Array.isArray(points)||points.length!==3||points.some(p=>!Array.isArray(p)||p.length!==2||p.some(v=>!Number.isFinite(v))))throw Error('三点矩形需要三个有效点');
+ const [a,b,c]=points,dx=b[0]-a[0],dy=b[1]-a[1],length2=dx*dx+dy*dy;
+ if(length2<1e-6)throw Error('矩形第一条边太短');
+ const factor=((c[0]-a[0])*(-dy)+(c[1]-a[1])*dx)/length2;
+ if(Math.abs(factor)*Math.sqrt(length2)<.5)throw Error('第三点距第一条边太近');
+ const offset=[-dy*factor,dx*factor];
+ return [a,b,[b[0]+offset[0],b[1]+offset[1]],[a[0]+offset[0],a[1]+offset[1]]];
+}
+function partitionRegions(outer,lines,h,w){
+ const inside=raster(outer,h,w),barrier=new Uint8Array(h*w),labels=new Int32Array(h*w),queue=new Int32Array(h*w);
+ for(const line of lines){
+  if(!Array.isArray(line)||line.length<2||line.length>512)throw Error('分界线至少需要两个点');
+  for(let i=1;i<line.length;i++){
+   const [ax,ay]=line[i-1],[bx,by]=line[i],steps=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay)*2));
+   if(steps>Math.max(h,w)*4096)throw Error('分界线过长');
+   for(let j=0;j<=steps;j++){
+    const x=Math.floor(ax+(bx-ax)*j/steps),y=Math.floor(ay+(by-ay)*j/steps);
+    if(x>=0&&x<w&&y>=0&&y<h&&inside[y*w+x])barrier[y*w+x]=1;
+   }
+  }
+ }
+ let count=0;
+ for(let start=0;start<labels.length;start++){
+  if(!inside[start]||barrier[start]||labels[start])continue;
+  const id=++count;let head=0,tail=0;queue[tail++]=start;labels[start]=id;
+  while(head<tail){const p=queue[head++],x=p%w,y=(p-x)/w;
+   for(const next of [x>0?p-1:-1,x<w-1?p+1:-1,y>0?p-w:-1,y<h-1?p+w:-1]){
+    if(next>=0&&inside[next]&&!barrier[next]&&!labels[next]){labels[next]=id;queue[tail++]=next;}
+   }
+  }
+ }
+ if(!count)throw Error('区域全部被分界线占据');
+ return {inside,barrier,labels,count};
+}
+function assignPartitionBoundaries(result,h,w){
+ const labels=result.labels.slice(),queue=new Int32Array(h*w);let head=0,tail=0;
+ for(let i=0;i<labels.length;i++)if(labels[i]>0)queue[tail++]=i;
+ while(head<tail){const p=queue[head++],x=p%w,y=(p-x)/w;
+  for(const next of [x>0?p-1:-1,x<w-1?p+1:-1,y>0?p-w:-1,y<h-1?p+w:-1]){
+   if(next>=0&&result.inside[next]&&!labels[next]){labels[next]=labels[p];queue[tail++]=next;}
+  }
+ }
+ return labels;
+}
+const api={validate,clip,raster,encode,decode,bbox,roadRaster,threePointRectangle,partitionRegions,assignPartitionBoundaries};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.MaskGeometry=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -1,17 +1,11 @@
-# GitHub 发布
+# GitHub 发布与自动更新
 
-1. 确定项目名称；当前暂用 GeoPair Annotator。更名时同步 README、窗口标题、EXE 名称、打包脚本和测试中的程序名。名称尚未做重名或商标核查。
-2. 查看 README 和 MIT 许可是否符合你的发布意图。检查 `git status`，只提交源码、说明和合成示例。
-3. 按 README 在 Windows 上构建、测试、打包。不要从已经标注过的程序目录直接压缩发布。
-4. 在自己的 GitHub 账号下新建仓库，推送源码。此项目整理阶段没有创建远程仓库或上传文件。
-5. 建立 `v0.1.0` Release，将 `release/GeoPairAnnotator-windows-x64.zip` 和 `.sha256` 文件作为附件上传，普通标注人员下载这个包。
+自动更新只读取公开仓库 `7paraquat/geopair-annotator` 的最新**正式 Release**。源码提交和 Actions 构建产物不会触发用户电脑更新。
 
-建议仓库描述：Offline optical–SAR paired-image annotation with independent polygons, custom classes, and portable Windows releases.
+1. 更新 `version.json` 和同版 `docs/RELEASE_NOTES_vX.Y.Z.md`，只提交源码、说明和合成示例。不要提交 `workspace`、影像、真实标注或构建目录。
+2. 在 Windows 上按 README 运行测试和构建，确认 ZIP 与 `.sha256` 均存在。`tests/test_github_update.py` 验证自动更新协议。
+3. 将源码推送到 GitHub `main`。创建并推送与 `version.json` 完全一致的 `vX.Y.Z` tag。
+4. GitHub Actions 的 Windows 构建流程会测试、打包并创建正式 Release，附件必须是 `GeoPairAnnotator-vX.Y.Z-windows-x64.zip` 和同名 `.zip.sha256`。
+5. 在 GitHub Releases 页面核对版本、附件和构建状态。v0.4.0 及以后安装的程序下次启动会自行发现更高版本并校验更新。
 
-建议 Topics：`annotation-tool`, `remote-sensing`, `sar`, `semantic-segmentation`, `multimodal`, `offline`, `windows`。
-
-首次发布说明可写：
-
-> 首个 Windows x64 免安装版本。支持光学/SAR 配对查看、独立多边形、可扩展类别、地区进度与标注包导出。原始影像只读，无需 Python 或联网。包含人工合成的界面示例，不包含真实数据集。暂不支持跨电脑自动同步与合并。
-
-保留 `third_party/` 许可文件。不要上传真实数据、工作区、私有清单、服务器信息、日志或未经核实许可的论文插图。自动生成的 `.gitignore` 已覆盖本项目常见输出目录。
+v0.3.0 及更早版本还没有 GitHub 自动检查功能，需先用启动窗口的本地 ZIP 更新入口或按旧版说明手动升级到 v0.4.0。自动更新只替换程序文件，保留 `workspace` 和外部数据集。

@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import queue
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -12,6 +14,8 @@ import traceback
 import uuid
 import webbrowser
 import zipfile
+
+from updater import prepare_github_update, prepare_update
 
 BASE = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
 ASSETS = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
@@ -134,13 +138,14 @@ def main():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
     window = tk.Tk()
-    window.title('GeoPair Annotator · 光学 / SAR 标注')
-    window.geometry('650x410')
-    window.minsize(650, 410)
+    version = read_json(BASE / 'version.json')['version']
+    window.title(f'GeoPair Annotator {version} · 光学 / SAR 标注')
+    window.geometry('650x500')
+    window.minsize(650, 500)
     window.option_add('*Font', 'MicrosoftYaHei 10')
     frame = ttk.Frame(window, padding=24); frame.pack(fill='both', expand=True)
     ttk.Label(frame, text='GeoPair Annotator', font=('Microsoft YaHei', 18, 'bold')).pack(anchor='w')
-    ttk.Label(frame, text='选择收到的数据集文件夹，然后开始标注。无需联网。').pack(anchor='w', pady=(8, 16))
+    ttk.Label(frame, text='选择数据集后开始标注；联网时自动检查 GitHub 更新。').pack(anchor='w', pady=(8, 16))
     dataset = tk.StringVar(value=config['data_root'])
     row = ttk.Frame(frame); row.pack(fill='x')
     entry = ttk.Entry(row, textvariable=dataset); entry.pack(side='left', fill='x', expand=True)
@@ -185,11 +190,101 @@ def main():
                 traceback.print_exc(); messagebox.showerror('导出失败', str(exc), parent=window)
     ttk.Button(frame, text='导出全部已保存标注', command=export).pack(fill='x', pady=(0, 10))
     ttk.Button(frame, text='打开标注保存文件夹', command=lambda: os.startfile(workspace)).pack(fill='x')
+    update_state = {'busy': False, 'ready': None}
+    def apply_update(stage, new_version, automatic=False):
+        started = False
+        try:
+            if not automatic and not messagebox.askokcancel('确认更新',
+                    f'将更新到 {new_version}。请先在网页保存修改。\n程序将关闭并重新打开；workspace 中的标注和类别不变。', parent=window):
+                shutil.rmtree(stage); return
+            script = stage / 'update-runner.ps1'
+            shutil.copy2(stage / 'GeoPairAnnotator' / 'update.ps1', script)
+            subprocess.Popen(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                '-WindowStyle', 'Hidden', '-File', str(script), '-InstallDir', str(BASE),
+                '-StageDir', str(stage), '-WaitPid', str(os.getpid())],
+                creationflags=subprocess.CREATE_NO_WINDOW)
+            started = True
+            cached = update_state['ready']
+            if cached and cached[0] != stage:
+                shutil.rmtree(cached[0], ignore_errors=True)
+            update_state['ready'] = None
+            if running['http']:
+                running['http'].shutdown(); running['http'].server_close()
+            window.destroy()
+        except Exception as exc:
+            traceback.print_exc()
+            if not started: shutil.rmtree(stage, ignore_errors=True)
+            messagebox.showerror('更新失败', str(exc), parent=window)
+
+    def update():
+        archive = filedialog.askopenfilename(title='选择新版 GeoPair Annotator ZIP', filetypes=[('更新包', '*.zip')])
+        if not archive: return
+        try:
+            stage, new_version = prepare_update(archive, version, BASE.parent)
+            apply_update(stage, new_version)
+        except Exception as exc:
+            traceback.print_exc()
+            messagebox.showerror('更新失败', str(exc), parent=window)
+    if (BASE / 'GeoPairAnnotator.exe').exists():
+        update_events = queue.Queue()
+        update_status = tk.StringVar(value='正在检查 GitHub 更新…')
+        ttk.Label(frame, textvariable=update_status, wraplength=600).pack(anchor='w', pady=(9, 4))
+        update_row = ttk.Frame(frame); update_row.pack(fill='x')
+        def check_updates():
+            if update_state['busy'] or update_state['ready']: return
+            update_state['busy'] = True
+            check_button.configure(state='disabled')
+            update_status.set('正在检查 GitHub 更新…')
+            def worker():
+                try:
+                    result = prepare_github_update(version, BASE.parent)
+                    update_events.put(('ready', result) if result else ('current', None))
+                except Exception as exc:
+                    update_events.put(('error', str(exc)))
+            threading.Thread(target=worker, daemon=True).start()
+        def poll_updates():
+            while not update_events.empty():
+                kind, result = update_events.get_nowait()
+                update_state['busy'] = False
+                check_button.configure(state='normal')
+                if kind == 'ready':
+                    stage, new_version = result
+                    if running['http']:
+                        update_state['ready'] = result
+                        update_status.set(f'已下载 v{new_version}；保存网页修改后点击“安装更新”。')
+                        ready_button.configure(state='normal')
+                    else:
+                        update_status.set(f'已校验 v{new_version}，正在更新…')
+                        apply_update(stage, new_version, automatic=True)
+                        return
+                elif kind == 'current':
+                    update_status.set('当前版本不低于 GitHub 最新正式版；可继续离线标注。')
+                else:
+                    update_status.set('GitHub 检查失败，可继续离线标注；稍后重试。')
+                    print('GitHub update check:', result)
+            window.after(200, poll_updates)
+        def install_ready():
+            if update_state['ready']:
+                stage, new_version = update_state['ready']
+                ready_button.configure(state='disabled')
+                apply_update(stage, new_version)
+                if window.winfo_exists():
+                    update_state['ready'] = (stage, new_version) if stage.exists() else None
+                    ready_button.configure(state='normal' if update_state['ready'] else 'disabled')
+        check_button = ttk.Button(update_row, text='检查 GitHub 更新', command=check_updates)
+        check_button.pack(side='left', fill='x', expand=True)
+        ready_button = ttk.Button(update_row, text='安装更新', command=install_ready, state='disabled')
+        ready_button.pack(side='left', fill='x', expand=True, padx=7)
+        ttk.Button(frame, text='选择本地 ZIP 更新', command=update).pack(fill='x', pady=(7, 0))
+        window.after(200, poll_updates)
+        check_updates()
     ttk.Label(frame, text='使用时保留此窗口。退出前先在网页保存；下次启动可继续标注。\n不要直接在 ZIP 压缩包中运行，请完整解压后双击 EXE。', wraplength=600).pack(anchor='w', pady=14)
     def close():
         if running['http']:
             if not messagebox.askokcancel('退出标注', '请确认网页中的修改已保存。退出后当前标注页面将停止服务。', parent=window): return
             running['http'].shutdown(); running['http'].server_close()
+        if update_state['ready']:
+            shutil.rmtree(update_state['ready'][0], ignore_errors=True)
         window.destroy()
     window.protocol('WM_DELETE_WINDOW', close)
     window.mainloop()
