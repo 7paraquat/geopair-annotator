@@ -8,7 +8,7 @@
 
 ## 普通用户怎么用
 
-从仓库的 **Releases** 下载最新版 `GeoPairAnnotator-v*-windows-x64.zip`，完整解压后双击 `GeoPairAnnotator.exe`。不要只复制 EXE，`_internal` 是内置运行环境。v0.4.0 起启动时自动检查 GitHub 正式版；无网络仍可标注。升级细节见 [v0.4.0 更新说明](docs/RELEASE_NOTES_v0.4.0.md)。
+从仓库的 **Releases** 下载最新版 `GeoPairAnnotator-v*-windows-x64.zip`，完整解压后双击 `GeoPairAnnotator.exe`。不要只复制 EXE，`_internal` 是内置运行环境。启动时自动检查 GitHub 正式版；v0.4.2 起 Release 附件下载失败时会尝试 GitHub API 的备用更新分支。无网络仍可标注。
 
 1. 点击“选择数据集”，选择直接包含各地区文件夹的目录。
 2. 点击“开始标注”，在默认浏览器中打开本地界面。
@@ -77,7 +77,7 @@ python -m venv .venv
 .venv\Scripts\python package_release.py
 ```
 
-结果位于 `release/GeoPairAnnotator-v0.4.1-windows-x64.zip`，附 SHA256 文件。`tests/test_release.py` 使用合成数据测试实际 EXE；`tests/test_update.py` 检查旧包升级保留工作区；`tests/test_github_update.py` 检查 GitHub 更新发现、下载与校验。
+结果位于 `release/GeoPairAnnotator-v0.4.2-windows-x64.zip`，附 SHA256 文件。`tests/test_release.py` 使用合成数据测试实际 EXE；`tests/test_update.py` 检查旧包升级保留工作区；`tests/test_github_update.py` 检查 GitHub 更新发现、下载与校验。
 
 源码只公开应用与生成示例；构建产物和个人工作区由 `.gitignore` 排除。二进制包应放到 GitHub Releases，不要提交到 Git 历史。[发布步骤](docs/RELEASING.md)
 

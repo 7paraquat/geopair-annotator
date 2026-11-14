@@ -1,4 +1,5 @@
 """Fetch a trusted GitHub release and validate its portable update archive."""
+import base64
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -6,6 +7,7 @@ import re
 import shutil
 import tempfile
 import urllib.parse
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -17,8 +19,11 @@ PROGRAM_FILES = frozenset({
 })
 MAX_UNCOMPRESSED = 300 * 1024 * 1024
 MAX_DOWNLOAD = 150 * 1024 * 1024
+MAX_GIT_BLOB = 64 * 1024 * 1024
 REPOSITORY = '7paraquat/geopair-annotator'
 LATEST_RELEASE_URL = f'https://api.github.com/repos/{REPOSITORY}/releases/latest'
+UPDATE_FEED_URL = f'https://api.github.com/repos/{REPOSITORY}/contents/GeoPairAnnotator-windows-x64.zip?ref=update-feed'
+GIT_BLOB_URL = f'https://api.github.com/repos/{REPOSITORY}/git/blobs/'
 USER_AGENT = 'GeoPair-Annotator-Updater'
 
 
@@ -65,7 +70,11 @@ def latest_release(current_version, opener=urllib.request.urlopen):
     size = archive.get('size')
     if isinstance(size, bool) or not isinstance(size, int) or not 0 < size <= MAX_DOWNLOAD:
         raise ValueError('GitHub 更新包大小无效')
+    digest = archive.get('digest')
+    if digest is not None and (not isinstance(digest, str) or not re.fullmatch(r'sha256:[0-9a-fA-F]{64}', digest)):
+        raise ValueError('GitHub 更新包摘要无效')
     return {'version': version, 'tag': tag, 'name': archive_name, 'size': size,
+            'digest': digest[7:].lower() if digest else None,
             'archive_url': release_asset_url(archive, tag, archive_name),
             'checksum_url': release_asset_url(assets[checksum_name], tag, checksum_name)}
 
@@ -83,6 +92,8 @@ def download_release(release, destination, opener=urllib.request.urlopen):
     match = re.fullmatch(rb'([0-9a-fA-F]{64})  ([A-Za-z0-9_.-]+)\s*', checksum)
     if not match or match.group(2).decode('ascii') != release['name']:
         raise ValueError('GitHub SHA256 文件内容无效')
+    if release.get('digest') and release['digest'] != match.group(1).decode('ascii').lower():
+        raise ValueError('GitHub Release 摘要与 SHA256 文件不一致')
     with tempfile.NamedTemporaryFile(prefix='geopair-download-', suffix='.zip', dir=destination, delete=False) as temp:
         target = Path(temp.name)
     try:
@@ -104,11 +115,53 @@ def download_release(release, destination, opener=urllib.request.urlopen):
         raise
 
 
+def download_git_blob_release(release, destination, opener=urllib.request.urlopen):
+    if not release.get('digest'):
+        raise ValueError('GitHub Release 未提供摘要，不能使用备用通道')
+    if release['size'] > MAX_GIT_BLOB:
+        raise ValueError('更新包超过备用通道的 64 MB 上限')
+    destination = Path(destination)
+    if shutil.disk_usage(destination).free < max(release['size'] * 3, 250 * 1024 * 1024):
+        raise OSError('更新所在磁盘空间不足，至少需要 250 MB 可用空间')
+    headers = {'Accept': 'application/vnd.github+json', 'User-Agent': USER_AGENT}
+    with opener(urllib.request.Request(UPDATE_FEED_URL, headers=headers), timeout=20) as response:
+        feed_data = response.read(8193)
+    if len(feed_data) > 8192:
+        raise ValueError('Git 更新目录信息过大')
+    feed = json.loads(feed_data)
+    blob_sha = feed.get('sha')
+    if (feed.get('size') != release['size'] or not isinstance(blob_sha, str)
+            or not re.fullmatch(r'[0-9a-f]{40}', blob_sha)):
+        raise ValueError('Git 更新包与正式 Release 不一致')
+    with opener(urllib.request.Request(GIT_BLOB_URL + blob_sha, headers=headers), timeout=45) as response:
+        blob_data = response.read(release['size'] * 2 + 65537)
+    if len(blob_data) > release['size'] * 2 + 65536:
+        raise ValueError('Git 更新对象过大')
+    blob = json.loads(blob_data)
+    if blob.get('sha') != blob_sha or blob.get('size') != release['size'] or blob.get('encoding') != 'base64':
+        raise ValueError('Git 更新对象元数据不一致')
+    content = blob.get('content')
+    if not isinstance(content, str):
+        raise ValueError('Git 更新对象缺少内容')
+    archive = base64.b64decode(''.join(content.split()), validate=True)
+    if len(archive) != release['size'] or hashlib.sha256(archive).hexdigest() != release['digest']:
+        raise ValueError('Git 更新包与正式 Release 的 SHA256 不一致')
+    with tempfile.NamedTemporaryFile(prefix='geopair-download-', suffix='.zip', dir=destination, delete=False) as temp:
+        temp.write(archive)
+        return Path(temp.name)
+
+
 def prepare_github_update(current_version, staging_parent, opener=urllib.request.urlopen):
     release = latest_release(current_version, opener)
     if release is None:
         return None
-    archive = download_release(release, staging_parent, opener)
+    try:
+        archive = download_release(release, staging_parent, opener)
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as primary_error:
+        try:
+            archive = download_git_blob_release(release, staging_parent, opener)
+        except Exception as fallback_error:
+            raise OSError(f'Release 附件无法下载；Git 备用通道也失败：{fallback_error}') from primary_error
     try:
         stage, version = prepare_update(archive, current_version, staging_parent)
         if version != release['version']:

@@ -260,7 +260,7 @@ def main():
                 elif kind == 'current':
                     update_status.set('当前版本不低于 GitHub 最新正式版；可继续离线标注。')
                 else:
-                    update_status.set('GitHub 检查失败，可继续离线标注；稍后重试。')
+                    update_status.set('在线更新失败：' + result[:160] + '；仍可离线标注。')
                     print('GitHub update check:', result)
             window.after(200, poll_updates)
         def install_ready():

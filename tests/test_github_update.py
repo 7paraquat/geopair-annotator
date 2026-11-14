@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import urllib.error
 import zipfile
 
 root = Path(__file__).resolve().parents[1]
@@ -41,8 +42,10 @@ class GitHubUpdateTests(unittest.TestCase):
         self.checksum_url = self.archive_url + '.sha256'
         self.release = {'tag_name': 'v' + self.version, 'draft': False, 'prerelease': False,
                         'assets': [
-                            {'name': self.name, 'size': len(self.archive), 'browser_download_url': self.archive_url},
+                            {'name': self.name, 'size': len(self.archive), 'browser_download_url': self.archive_url,
+                             'digest': 'sha256:' + hashlib.sha256(self.archive).hexdigest()},
                             {'name': self.name + '.sha256', 'size': 110, 'browser_download_url': self.checksum_url}]}
+        self.blob_sha = hashlib.sha1(b'blob ' + str(len(self.archive)).encode() + b'\0' + self.archive).hexdigest()
 
     def opener(self, request, timeout):
         url = request.full_url
@@ -83,6 +86,32 @@ class GitHubUpdateTests(unittest.TestCase):
         self.release['assets'].pop()
         with self.assertRaisesRegex(ValueError, '缺少'):
             updater.latest_release('0.4.0', self.opener)
+
+    def fallback_opener(self, request, timeout):
+        url = request.full_url
+        if url == self.checksum_url:
+            raise urllib.error.URLError('Release asset DNS failed')
+        if url == updater.UPDATE_FEED_URL:
+            return FakeResponse(json.dumps({'sha': self.blob_sha, 'size': len(self.archive)}).encode())
+        if url == updater.GIT_BLOB_URL + self.blob_sha:
+            import base64
+            return FakeResponse(json.dumps({'sha': self.blob_sha, 'size': len(self.archive),
+                                            'encoding': 'base64', 'content': base64.b64encode(self.archive).decode()}).encode())
+        return self.opener(request, timeout)
+
+    def test_git_blob_fallback_when_release_assets_are_unreachable(self):
+        with tempfile.TemporaryDirectory(dir=root / 'qa') as directory:
+            stage, version = updater.prepare_github_update('0.4.0', directory, self.fallback_opener)
+            self.assertEqual(version, self.version)
+            self.assertTrue((stage / 'GeoPairAnnotator/GeoPairAnnotator.exe').is_file())
+            self.assertEqual(list(Path(directory).glob('geopair-download-*.zip')), [])
+
+    def test_git_blob_fallback_rejects_different_release_digest(self):
+        self.release['assets'][0]['digest'] = 'sha256:' + '0' * 64
+        with tempfile.TemporaryDirectory(dir=root / 'qa') as directory:
+            with self.assertRaisesRegex(OSError, 'Git 备用通道也失败'):
+                updater.prepare_github_update('0.4.0', directory, self.fallback_opener)
+            self.assertEqual(list(Path(directory).glob('geopair-download-*.zip')), [])
 
 
 if __name__ == '__main__':

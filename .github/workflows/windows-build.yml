@@ -37,6 +37,29 @@ jobs:
           $notes = "docs/RELEASE_NOTES_v$version.md"
           if (!(Test-Path -LiteralPath $archive) -or !(Test-Path -LiteralPath $notes)) { throw 'Release files missing' }
           gh release create $env:GITHUB_REF_NAME $archive "$archive.sha256" --title "GeoPair Annotator v$version" --notes-file $notes --verify-tag
+      - name: Publish Git update feed
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = (Get-Content version.json -Raw | ConvertFrom-Json).version
+          $archive = (Resolve-Path "release/GeoPairAnnotator-v$version-windows-x64.zip").Path
+          $feed = Join-Path $env:RUNNER_TEMP 'geopair-update-feed'
+          git fetch origin refs/heads/update-feed
+          git worktree add --detach $feed FETCH_HEAD
+          $target = Join-Path $feed 'GeoPairAnnotator-windows-x64.zip'
+          Copy-Item -LiteralPath $archive -Destination $target -Force
+          $manifest = @{
+            version = $version
+            archive = 'GeoPairAnnotator-windows-x64.zip'
+            size = (Get-Item -LiteralPath $target).Length
+            sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+          } | ConvertTo-Json -Compress
+          Set-Content -LiteralPath (Join-Path $feed 'latest.json') -Value $manifest -Encoding utf8 -NoNewline
+          git -C $feed config user.name 'github-actions[bot]'
+          git -C $feed config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C $feed add latest.json GeoPairAnnotator-windows-x64.zip
+          git -C $feed commit -m "Publish v$version update feed"
+          git -C $feed push origin HEAD:refs/heads/update-feed
       - uses: actions/upload-artifact@v4
         with:
           name: GeoPairAnnotator-windows-x64
