@@ -23,6 +23,7 @@
 
 - 光学与 SAR 并排查看，同一对象关联相同标注 ID，两侧轮廓可独立编辑。
 - 多边形绘制、顶点调整、撤销/重做、局部放大与中心点定位。
+- Ctrl/Shift 多选地物，拖动整组平移当前光学或 SAR 一侧，可一次撤销。
 - 道路中线加像素宽度快速生成掩膜，光学和 SAR 可分别调整中线与路宽。
 - 圈定区域后用开放或闭合分界线划分地块，逐块赋予类别；三点生成旋转矩形。
 - 允许画到图外，保存原尺寸裁剪后的轮廓与掩膜。
@@ -76,7 +77,7 @@ python -m venv .venv
 .venv\Scripts\python package_release.py
 ```
 
-结果位于 `release/GeoPairAnnotator-v0.4.0-windows-x64.zip`，附 SHA256 文件。`tests/test_release.py` 使用合成数据测试实际 EXE；`tests/test_update.py` 检查旧包升级保留工作区；`tests/test_github_update.py` 检查 GitHub 更新发现、下载与校验。
+结果位于 `release/GeoPairAnnotator-v0.4.1-windows-x64.zip`，附 SHA256 文件。`tests/test_release.py` 使用合成数据测试实际 EXE；`tests/test_update.py` 检查旧包升级保留工作区；`tests/test_github_update.py` 检查 GitHub 更新发现、下载与校验。
 
 源码只公开应用与生成示例；构建产物和个人工作区由 `.gitignore` 排除。二进制包应放到 GitHub Releases，不要提交到 Git 历史。[发布步骤](docs/RELEASING.md)
 

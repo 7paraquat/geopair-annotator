@@ -13,7 +13,7 @@ sys.path.insert(0, str(root))
 from updater import prepare_update
 
 old_archive = root / 'release/GeoPairAnnotator-v0.3.0-windows-x64.zip'
-new_archive = root / 'release/GeoPairAnnotator-v0.4.0-windows-x64.zip'
+new_archive = root / 'release/GeoPairAnnotator-v0.4.1-windows-x64.zip'
 assert old_archive.is_file() and new_archive.is_file()
 legacy_roots = {'GeoPairAnnotator.exe', '_internal', 'README.md', 'LICENSE',
                 'THIRD_PARTY_NOTICES.md', 'RELEASE_NOTES_v0.2.0.md', 'docs',
@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='geopair-update-qa-', dir=root / 'qa') a
     else:
         raise AssertionError('Update accepted workspace payload')
     stage, version = prepare_update(new_archive, '0.3.0', qa)
-    assert version == '0.4.0'
+    assert version == '0.4.1'
     script = qa / 'update-runner.ps1'
     shutil.copy2(install / 'update.ps1', script)
     result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',

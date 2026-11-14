@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-editor-version="20261114-region-partition-1">
+<html lang="zh-CN" data-editor-version="20261114-multi-move-1">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -152,7 +152,7 @@
     <div class="toolbar">
       <div class="toolgroup" aria-label="标注工具">
         <button id="mode-select" type="button" class="on" aria-pressed="true">选择 / 顶点</button>
-        <button id="mode-move" type="button" aria-pressed="false">移动本侧</button>
+        <button id="mode-move" type="button" aria-pressed="false" title="Ctrl/Shift 点击列表或影像可多选，拖动时只平移当前侧">移动本侧</button>
         <button id="mode-polygon" type="button">多边形</button><button id="mode-road" type="button">道路中线</button><button id="mode-road-edit" type="button">编辑中线</button><button id="finish" type="button">完成绘制</button><button id="cancel" type="button">取消绘制</button>
         <button id="mode-rect3" type="button" title="先点矩形的一条边，再点第三点确定垂直宽度">三点矩形</button>
         <label for="road-width">路宽 <input id="road-width" type="number" min="1" max="200" step="1" value="12" aria-label="道路完整像素宽度"/></label><span class="hint">px</span>
@@ -201,6 +201,7 @@
     <h2>全部掩膜</h2>
     <div id="mask-list"></div>
     <h2>当前标注</h2><p id="selection-info">尚未选中</p>
+    <p class="hint">Ctrl/Shift 点击列表或影像可多选；点“移动本侧”后拖动，所选地物一起平移。</p>
     <p class="hint">同一编号、同一类别，两侧轮廓独立。列表越靠下覆盖优先级越高；隐藏仅影响显示。未标区域为 0（忽略）。</p>
     <p id="scheme-warn" class="warn" hidden></p>
     <div id="empty">还没有选中标注。</div>
@@ -226,7 +227,7 @@
       <select id="material"></select>
       <div class="row"><input id="new-material" type="text" maxlength="30" placeholder="新增材质，如玻璃" aria-label="新增材质名称"/><button id="add-material" type="button">新增材质</button></div>
       <p class="hint">输入中文名称即可新增，并自动选用于当前标注；最后点“保存修改”。</p>
-      
+
       <label><input id="mask-on" type="checkbox" checked/> 显示这条掩膜</label>
     </div>
     </div>
@@ -237,7 +238,7 @@
         <li>道路中线：设路宽（完整像素宽度），沿道路逐点点击，再点“完成绘制”；生成后选择道路、点“编辑中线”可拖动中线点或修改当前侧路宽。</li>
         <li>三点矩形：先点一条边的两端，再点第三点确定垂直方向的宽度；可用于车辆等旋转目标。</li>
         <li>地块划分：圈定区域并完成绘制；画分界线，每条线点至少两点后完成绘制，可画多条；点回线的起点可闭合，开放线须接到外边界才能分开地块；再选“逐块分类”，选类别后点击每块，最后点“生成地块”并保存。</li>
-        <li>点击哪侧就调整哪侧；同一轮廓必须在同侧闭合。移动本侧可整体拖动，重画本侧保持地物编号。</li>
+        <li>点击哪侧就调整哪侧；同一轮廓必须在同侧闭合。Ctrl/Shift 点击列表或影像可多选，移动本侧可拖动所有选中地物；另一侧不变，Ctrl+Z 可整组撤销。</li>
         <li>选择后可拖动多边形顶点；图外部分自动裁剪，交叉和退化形状不能保存。</li>
         <li>局部放大：在原图移动定位，光学/SAR显示同一区域；放大区也可标注，倍数为原图显示比例的2/4/8倍。</li>
         <li>笔刷和橡皮擦作用于选中掩膜，只修改当前侧；涂改后转为像素掩膜。</li>
@@ -250,5 +251,5 @@
   </form>
 </main>
 <script src="/geometry.js?v=20261114-region-partition-1"></script>
-<script src="/app.js?v=20261114-region-partition-1"></script>
+<script src="/app.js?v=20261114-multi-move-1"></script>
 </body></html>

@@ -21,6 +21,7 @@ jobs:
       - run: python examples/generate_demo.py
       - run: python -m unittest discover -s tests -p test_dataset_index.py
       - run: python -m unittest discover -s tests -p test_github_update.py
+      - run: node tests/check_multi_move.js
       - run: python build.py
       - run: python tests/test_release.py
       - run: python package_release.py
