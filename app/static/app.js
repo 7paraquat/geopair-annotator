@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id), G=MaskGeometry;
 const ZH={background:'背景',building:'建筑物',vehicle:'车辆',ship:'船',aircraft:'飞机',bridge:'桥梁',solar_panel:'太阳能板',road:'道路',tree:'树',water:'水体',cropland:'耕地',grassland:'草地',bareland:'裸地'};
 Object.assign(ZH,{building_facade:'建筑外立面',quay:'码头',red:'红色',gray:'灰色',white:'白色',blue:'蓝色',green:'绿色',brown:'棕色',black:'黑色',yellow:'黄色',purple:'紫色',concrete:'混凝土',metal:'金属',asphalt:'沥青',soil:'土壤',tile:'瓦片'});
-const EDITOR_VERSION='20261114-multi-move-1';
+const EDITOR_VERSION='20261116-category-export-1';
 const S={pad:0,meta:null,site:'',stem:'',anns:[],selected:-1,multi:new Set(),h:1,w:1,revision:null,saved:'[]',undo:[],redo:[],draft:[],drag:null,mode:'select',view:'dual',show:true,zoom:1,imgs:[],tiles:[],offset:0,total:0,loading:false,queueLoading:false,saving:false,token:0,allSites:[],dataset:"earthmiss",sitePrefix:"EarthMiss--"};
 const L={enabled:false,center:null,crop:null};
 const STATE_LABELS={todo:'未标注',in_progress:'标注中',done:'已完成',discussion:'待讨论'};
@@ -232,6 +232,7 @@ async function save(){
 $('save').onclick=safe(save);
 $('workflow-status').onchange=()=>{if(S.loading||S.saving||S.queueLoading||!S.stem||!canEdit())return;S.workflow=$('workflow-status').value;status('状态尚未保存，请点保存修改');};
 $('export').onclick=safe(async()=>{if(S.draft.length||S.drag||dirty())throw Error('请先保存当前修改再导出');const r=await fetch('/api/export?'+new URLSearchParams({site:S.site,stem:S.stem}));if(!r.ok)throw Error((await r.json()).error);const url=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=url;a.download=S.stem+'_paired.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+$('export-categories').onclick=safe(async()=>{const r=await fetch('/api/categories.csv',{cache:'no-store'});if(!r.ok)throw Error('类别表导出失败');const url=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=url;a.download='GeoPair-类别中英文.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status('类别表已导出');});
 function canLeave(){if(S.saving||S.loading||S.queueLoading){status('正在读写，请稍候');return false;}if(S.drag||S.draft.length||S.redraw||S.partition){status('请先完成绘制或生成地块，再切换影像');return false;}return !dirty()||confirm('当前修改尚未保存，确定放弃并切换？');}
 const image=url=>new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(Error('影像加载失败'));i.src=url;});
 // Cache only immutable images. Annotation revisions always come from /api/tile.

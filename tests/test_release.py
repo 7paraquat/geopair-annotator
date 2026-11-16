@@ -1,5 +1,6 @@
 """Test the built EXE without Python on PATH; all writes use isolated QA state."""
 from pathlib import Path
+import csv
 import hashlib
 import io
 import json
@@ -69,6 +70,12 @@ try:
     tile = get('/api/tile'+query)
     assert tile['source_kind'] == 'blank' and tile['annotations'] == []
     get('/api/categories', {'value':'qa_custom', 'label':'测试新增类别'})
+    category_csv = raw('/api/categories.csv')
+    assert category_csv.startswith(b'\xef\xbb\xbf')
+    category_rows = list(csv.DictReader(io.StringIO(category_csv.decode('utf-8-sig'))))
+    assert next(row for row in category_rows if row['英文类别'] == 'building')['中文类别'] == '建筑物'
+    assert next(row for row in category_rows if row['英文类别'] == 'qa_custom')['中文类别'] == '测试新增类别'
+    assert [int(row['类别ID']) for row in category_rows] == sorted(int(row['类别ID']) for row in category_rows)
     get('/api/attributes', {'kind':'color','label':'测试颜色'})
     annotation = {'id':1, 'category':'qa_custom', 'polygon':[[1,1],[9,1],[9,9],[1,9]],
                   'sar_polygon':[[11,11],[19,11],[19,19],[11,19]], 'sar_segmentation':None,

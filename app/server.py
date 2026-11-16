@@ -3,6 +3,7 @@
 
 import os
 
+import csv
 import io
 import base64
 import hmac
@@ -55,7 +56,13 @@ CATEGORIES = [
     "quay",
 ]
 RETIRED_CATEGORIES = {'tree'}
-CATEGORY_LABELS = {'building_facade':'建筑外立面','quay':'码头'}
+CATEGORY_LABELS = {
+    'building': '建筑物', 'vehicle': '车辆', 'ship': '船', 'aircraft': '飞机',
+    'bridge': '桥梁', 'solar_panel': '太阳能板', 'road': '道路',
+    'water': '水体', 'cropland': '耕地', 'grassland': '草地',
+    'bareland': '裸地', 'building_facade': '建筑外立面', 'quay': '码头',
+    'tree': '树',
+}
 SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -231,6 +238,15 @@ def current_label_map():
                                  {**EXTRA_LABELS, **{v['value']: v['label'] for v in custom}, **CATEGORY_LABELS})
 
 
+def category_map_csv():
+    output = io.StringIO(newline='')
+    writer = csv.writer(output)
+    writer.writerow(('类别ID', '英文类别', '中文类别'))
+    for item in sorted(current_label_map()['classes'], key=lambda entry: entry['id']):
+        writer.writerow((item['id'], item['value'], item['label']))
+    return ('\ufeff' + output.getvalue()).encode('utf-8')
+
+
 def load_tile_record(site, stem):
     shape = EARTH.shape(site,stem) if site.startswith(PREFIX) else shared_masks.pair_shape(DATA_ROOT, site, stem)
     path = shared_masks.pointer(SHARED_ROOT, site, stem)
@@ -334,6 +350,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/export':
                 if query.get('site',[''])[0].startswith(PREFIX):EARTH.item(query['site'][0],query.get('stem',[''])[0])
                 self.send_bytes(shared_masks.export(SHARED_ROOT, query.get('site',[''])[0], query.get('stem',[''])[0]), 'application/zip')
+                return
+            if path == '/api/categories.csv':
+                self.send_bytes(category_map_csv(), 'text/csv; charset=utf-8')
                 return
             if path == "/api/meta":
                 custom_categories = load_custom_categories()
